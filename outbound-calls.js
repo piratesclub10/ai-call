@@ -46,7 +46,7 @@ export function registerOutboundRoutes(fastify) {
 
   // Route to initiate outbound calls
   fastify.post("/outbound-call", async (request, reply) => {
-    const { number, prompt } = request.body;
+     const { number, prompt } = request.body;
 
     if (!number) {
       return reply.code(400).send({ error: "Phone number is required" });
@@ -76,6 +76,7 @@ export function registerOutboundRoutes(fastify) {
   // TwiML route for outbound calls
   fastify.all("/outbound-call-twiml", async (request, reply) => {
     const prompt = request.query.prompt || '';
+    console.log('Prompt:', prompt);
 
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
       <Response>
@@ -117,8 +118,8 @@ export function registerOutboundRoutes(fastify) {
               type: "conversation_initiation_client_data",
               conversation_config_override: {
                 agent: {
-                  prompt: { prompt: customParameters?.prompt || "you are a gary from the phone store" },
-                  first_message: "hey there! how can I help you today?",
+                  prompt: { prompt: customParameters?.prompt },
+                  first_message: "Bonjour, je suis Sarah de Mon Réseau Habitat. Je vous appelle suite à la demande que vous avez faite pour obtenir des informations sur les aides de l'État pour la rénovation"
                 },
               }
             };
@@ -132,6 +133,12 @@ export function registerOutboundRoutes(fastify) {
           elevenLabsWs.on("message", (data) => {
             try {
               const message = JSON.parse(data);
+              console.log("[ElevenLabs] Received message:", message);
+              if (message.audio?.chunk) {
+                console.log("[ElevenLabs] Audio chunk received, size:", message.audio.chunk.length);
+              } else {
+                console.log("[ElevenLabs] No audio chunk in message");
+              }
 
               switch (message.type) {
                 case "conversation_initiation_metadata":
@@ -139,15 +146,21 @@ export function registerOutboundRoutes(fastify) {
                   break;
 
                 case "audio":
+                  if (!streamSid) {
+                    console.log("[ElevenLabs] StreamSid not available yet, buffering audio...");
+                    return;
+                  }
                   if (streamSid) {
                     if (message.audio?.chunk) {
                       const audioData = {
                         event: "media",
                         streamSid,
                         media: {
-                          payload: message.audio.chunk
+                          payload: message.audio.chunk,
+                          content_type: "audio/x-mulaw; rate=8000",
                         }
                       };
+                  
                       ws.send(JSON.stringify(audioData));
                     } else if (message.audio_event?.audio_base_64) {
                       const audioData = {
@@ -244,6 +257,7 @@ export function registerOutboundRoutes(fastify) {
           console.error("[Twilio] Error processing message:", error);
         }
       });
+  
 
       // Handle WebSocket closure
       ws.on("close", () => {
